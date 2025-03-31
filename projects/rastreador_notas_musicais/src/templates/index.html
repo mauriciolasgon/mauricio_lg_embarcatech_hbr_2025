@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Análise de Notas Musicais em Tempo Real</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #f0f2f5;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        .chart-container {
+            width: 90vw;
+            height: 80vh;
+            max-width: 1400px;
+            max-height: 800px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+            padding: 30px;
+            margin: 20px;
+            position: relative;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .chart-container {
+                width: 95vw;
+                height: 70vh;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Análise em Tempo Real de Notas Musicais</h1>
+    <div class="chart-container">
+        <canvas id="noteChart"></canvas>
+    </div>
+
+    <script>
+        // Configuração do gráfico com a opção de parsing
+        const config = {
+            type: 'bar',
+            data: {
+                labels: [], // Nomes das notas (ex: "D#5")
+                datasets: [{
+                    label: 'Frequência (Hz)',
+                    data: [], // Dados das notas (objetos contendo frequency, etc.)
+                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 2,
+                    borderRadius: 5,
+                    hoverBackgroundColor: 'rgba(255, 99, 132, 0.8)',
+                    // Informa ao Chart.js que a propriedade 'frequency' contém o valor numérico
+                    parsing: { yAxisKey: 'frequency' }
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Frequência (Hz)',
+                            font: { size: 16 }
+                        },
+                        grid: { color: 'rgba(0,0,0,0.1)' }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Notas Musicais',
+                            font: { size: 16 }
+                        },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const data = context.dataset.data[context.dataIndex];
+                                return [
+                                    `Nota: ${data.note}${data.octave}`,
+                                    `Frequência: ${data.frequency.toFixed(2)} Hz`,
+                                    `Cents: ${data.cents.toFixed(2)}`
+                                ];
+                            }
+                        }
+                    },
+                    legend: { display: false }
+                },
+                animation: {
+                    duration: 300,
+                    easing: 'easeOutQuart'
+                }
+            }
+        };
+
+        // Inicialização do gráfico
+        const ctx = document.getElementById('noteChart').getContext('2d');
+        const chart = new Chart(ctx, config);
+
+        // Controle de fluxo de dados
+        const maxDataPoints = 20; // Número máximo de pontos no gráfico
+        let dataIndex = 0; // Índice para controle de atualização
+        let lastNote = null; // Armazena a última nota exibida
+
+        // Conexão SSE com tratamento de erros
+        const eventSource = new EventSource('/stream'); // Endpoint SSE
+
+        eventSource.onmessage = (e) => {
+    const newNote = JSON.parse(e.data); // Recebe os dados da nota
+
+    // Verifica se a nova nota é diferente da última exibida
+    if (!lastNote || 
+        newNote.nota !== lastNote.nota || 
+        newNote.oitava !== lastNote.oitava || 
+        newNote.freq !== lastNote.freq || 
+        newNote.cents !== lastNote.cents) {
+
+        // Nome da nota para o eixo X
+        const noteLabel = `${newNote.nota}${newNote.oitava}`;
+
+        // Adiciona novos dados ao gráfico
+        if (chart.data.labels.length < maxDataPoints) {
+            chart.data.labels.push(noteLabel);
+            chart.data.datasets[0].data.push(newNote.freq); // Apenas o valor da frequência
+        } else {
+            // Substitui os dados mais antigos se o limite for atingido
+            const index = dataIndex % maxDataPoints;
+            chart.data.labels[index] = noteLabel;
+            chart.data.datasets[0].data[index] = newNote.freq;
+        }
+
+        dataIndex++; // Incrementa o índice
+        lastNote = newNote; // Atualiza a última nota exibida
+
+        // Atualiza o gráfico de forma suave
+        chart.update();
+    }
+};
+
+
+        eventSource.onerror = (err) => {
+            console.error('Erro na conexão SSE:', err);
+            eventSource.close(); // Fecha a conexão em caso de erro
+        };
+
+        // Redimensiona o gráfico ao ajustar a janela
+        window.addEventListener('resize', () => chart.resize());
+    </script>
+</body>
+</html>

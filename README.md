@@ -1,6 +1,6 @@
 # Projetos de Sistemas Embarcados - EmbarcaTech 2025
 
-Autor: **(insira seu nome)**
+Autor: **Mauricio Lasca Gonçales**
 
 Curso: Residência Tecnológica em Sistemas Embarcados
 
@@ -18,6 +18,12 @@ Cada projeto tem sua própria pasta, contendo o código-fonte, documentação e 
 
 ---
 
-## O que fazer com este arquivo
+## Projetos
 
-Ao fazer o *fork* do repositório, o aluno está livre para modificar este arquivo como quiser dentro do seu próprio *fork*.
+-[Music Note Tracker](./projects/rastreador_notas_musicais/)
+
+-[Galton Board Digital](./projects/galton_board/)
+
+-[Audio Synthesizer](./projects/sintetizador_audio/)
+
+-[Balancing Robot](./projects/robo_equilibrista/)
