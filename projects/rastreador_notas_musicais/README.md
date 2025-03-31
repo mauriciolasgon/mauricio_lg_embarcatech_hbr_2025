@@ -41,8 +41,6 @@ GPIOs 14 e 15 (I2C) → Comunicação com o display OLED.
 
 O Rastreador de Notas Musicais consegue identificar notas musicais com base em sua frequência. No entanto, algumas limitações foram observadas:
 
-O Rastreador de notas musicais consegue identificar notas musicais com base em sua frequência. No entanto, algumas limitações foram observadas:
-
 Para frequências mais baixas, os harmônicos podem ser identificados erroneamente em detrimento da frequência fundamental.
 
 A conexão com o servidor ainda apresenta instabilidades, necessitando maior robustez na implementação da comunicação Wi-Fi e conexão com o servidor.
