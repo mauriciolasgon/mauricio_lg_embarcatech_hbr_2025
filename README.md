@@ -20,10 +20,10 @@ Cada projeto tem sua própria pasta, contendo o código-fonte, documentação e 
 
 ## Projetos
 
--[Music Note Tracker](./projects/rastreador_notas_musicais/)
+-[Rastreador de notas musicais](./projects/rastreador_notas_musicais/)
 
 -[Galton Board Digital](./projects/galton_board/)
 
--[Audio Synthesizer](./projects/sintetizador_audio/)
+-[Sintetizador de áudio](./projects/sintetizador_audio/)
 
--[Balancing Robot](./projects/robo_equilibrista/)
+-[Robo equilibrista](./projects/robo_equilibrista/)
