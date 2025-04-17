@@ -12,16 +12,16 @@ Campinas, março de 2025
 
 ## Sobre este repositório
 
-Este repositório reúne os projetos desenvolvidos ao longo do curso de Sistemas Embarcados, durante a etapa de residência.  
+Este repositório reúne os projetos e atividades desenvolvidos ao longo do curso de Sistemas Embarcados, durante a etapa de residência.  
 
-Cada projeto tem sua própria pasta, contendo o código-fonte, documentação e recursos visuais.
+Cada projeto e atividade tem sua própria pasta, contendo o código-fonte, documentação e recursos visuais.
 
 ---
 
 ## Projetos
 
--[Rastreador de notas musicais](./projects/rastreador_notas_musicais/)
-
+-[Rastreador de notas musicais](./projects/rastreador_notas_musicais/)  
+                                                                        
 -[Galton Board Digital](./projects/galton_board/)
 
 -[Sintetizador de áudio](./projects/sintetizador_audio/)
