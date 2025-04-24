@@ -47,7 +47,8 @@ pico_enable_stdio_usb(galton_board 1)
 # Add the standard library to the build
 target_link_libraries(galton_board
         pico_stdlib
-        hardware_i2c)
+        hardware_i2c
+        hardware_adc)
 
 # Add the standard include files to the build
 target_include_directories(galton_board PRIVATE

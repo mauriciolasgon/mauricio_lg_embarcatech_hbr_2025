@@ -6,6 +6,7 @@
 #include "pico/binary_info.h"
 #include "../inc/ssd1306.h"
 #include "hardware/i2c.h"
+#include "hardware/adc.h"
 
 
 const uint I2C_SDA = 14;
@@ -19,7 +20,7 @@ typedef struct {
 
 }bola;
 
-
+// Movimenta a bolinha no display de acordo com a velocidade
 void move_bola(bola *b, uint8_t *ssd, struct render_area *area)
 {
     static int posicao=0; 
@@ -66,9 +67,62 @@ void move_bola(bola *b, uint8_t *ssd, struct render_area *area)
 
 }
 
+// Função que retorna um número binário aleatório observando o ruido do adc
+
+int binary_choice(){
+
+    uint16_t adc_value = adc_read();
+    return (adc_value & 0x01); // Retorna o bit menos significativo do valor lido
+}
+
+// Desenha as canaletas na posição central do display 
+void draw_canaleta(uint8_t *ssd) {
+    const int W = ssd1306_width;
+    const int H = ssd1306_height;
+    int y = H - 8;              // pixel vertical onde quer a “canaleta”
+    int page = y >> 3;          // y/8
+    int bit  = y &  0x7;        // y%8
+    uint8_t mask = 1 << bit;    
+
+    int row_offset = page * W;
+    for (int x = W/4; x < W - W/4; x += 5) {
+        ssd[row_offset + x] |= mask;
+    }
+}
+
+
+// Desenha os pinos no display oled
+void draw_pins(uint8_t *ssd) {
+    const int W = ssd1306_width;
+    const int H = ssd1306_height;
+
+    for (int y = 1; y < H - 8; y++) {
+        int pin_count = y - 1;
+        int start_x   = W/2 - pin_count;
+        int page      = y >> 3;      // qual página de 8 linhas
+        int bit       = y & 0x7;     // qual bit dentro do byte
+        uint8_t mask = 1 << bit;
+        int base = page * W + start_x;
+
+        // espaçar cada “pino” em 2 colunas
+        for (int j = 0; j < pin_count; j++) {
+            int idx = base + (j << 1);   // j*2 colunas
+            ssd[idx] |= mask;            // OR para não apagar outros pixels
+        }
+    }
+}
+
+
+
+
+
 int main()
 {
     stdio_init_all();
+
+
+    adc_init();
+    adc_select_input(3);
 
 
     // Inicialização do i2c
@@ -96,6 +150,7 @@ int main()
     // zera o display inteiro
     uint8_t ssd[ssd1306_buffer_length];
     memset(ssd, 0, ssd1306_buffer_length);
+
     render_on_display(ssd, &frame_area);
     
     bola b1;
@@ -108,13 +163,23 @@ int main()
     ssd[b1.posicao[0] + (b1.posicao[2]/8) * ssd1306_width] = b1.face;
 
     ssd[b1.posicao[1] + (b1.posicao[2]/8) * ssd1306_width] = b1.face;
+    
+    draw_canaleta(ssd);
+
+    
+    draw_pins(ssd);
+
     render_on_display(ssd, &frame_area);
+
+    printf("Pins drawn\n");
 
 
     while (true) {
         
         printf("Hello, world!\n");
-        move_bola(&b1, ssd, &frame_area);
+        //move_bola(&b1, ssd, &frame_area);
+        printf("Binary choice: %d\n", binary_choice());
+        
         sleep_ms(1000);
     }
 }
