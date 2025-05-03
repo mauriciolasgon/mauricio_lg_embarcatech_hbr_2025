@@ -51,23 +51,23 @@ void move_bola_x(bola *b, uint8_t *ssd ,int direction)
     int pos_l=0,pos_r=0;
     uint8_t mask0 =ssd[b->posicao[0] + (b->posicao[2]/8) * ssd1306_width];
     uint8_t mask1 =ssd[b->posicao[1] + (b->posicao[2]/8) * ssd1306_width];
-    ssd[b->posicao[0] + (b->posicao[2]/8) * ssd1306_width]=mask0 & ~ b->face; // Apaga apenas a bolinha na posição anterior
-    ssd[b->posicao[1] + (b->posicao[2]/8) * ssd1306_width]=mask1 & ~ b->face; 
+    ssd[b->posicao[0] + (b->posicao[2]/8) * ssd1306_width]= mask0 & ~ b->face ; // Apaga apenas a bolinha na posição anterior preservando os pinos
+    ssd[b->posicao[1] + (b->posicao[2]/8) * ssd1306_width]= mask1 & ~ b->face ;
     if(dir== 1){// verifica se a bolinha colidiu pelo lado esquerdo e direito e adpta a nova posicao da bolinha
-        pos_l=5;
+        pos_l=2;
         pos_r=4;
-        dir=0;
     }else{
         pos_l=4;
-        pos_r=5;
-        dir=1;
+        pos_r=2;
     }
     if(direction){// Se for esquerda
-        b->posicao[0]+=pos_l;
-        b->posicao[1]= b->posicao[0]+1;
-    }else{ // Se for direita
-        b->posicao[0]-=pos_r;
+        b->posicao[0]-=pos_l;
         b->posicao[1]= b->posicao[0]-1;
+        dir=0;
+    }else{ // Se for direita
+        b->posicao[0]+=pos_r;
+        b->posicao[1]= b->posicao[0]+1;
+        dir=1;
     } 
 }
 
@@ -75,26 +75,43 @@ void move_bola_x(bola *b, uint8_t *ssd ,int direction)
 void move_bola_y(bola *b, uint8_t *ssd, struct render_area *area)
 {
     static int posicao=0;
+    int bits1_pagina_atual=b->posicao[0] + (b->posicao[2]/8) * ssd1306_width; //Cálculo para encontrar o byte da pagina atual
+    int bits2_pagina_atual=b->posicao[1] + (b->posicao[2]/8) * ssd1306_width;
+    int bits1_pagina_futura=b->posicao[0] + ((b->posicao[2]+8)/8) * ssd1306_width; // Cálculo para encontrar o byte da proxima pagina
+    int bits2_pagina_futura=b->posicao[1] + ((b->posicao[2]+8)/8) * ssd1306_width;
+
+     
+
+    uint8_t pag1_atual = ssd[bits1_pagina_atual], pag2_atual = ssd[bits2_pagina_atual]; 
+    uint8_t pag1_futura = ssd[bits1_pagina_futura], pag2_futura = ssd[bits2_pagina_futura];
+
+    uint8_t mask1_pagina_sem_bola_atual= pag1_atual & ~b->face; //Mascara para apagar a bola na pagina atual
+    uint8_t mask2_pagina_sem_bola_atual= pag2_atual & ~b->face;
+    uint8_t mask1_pagina_sem_bola_futura= pag1_futura & ~b->face; //Mascara para apagar a bola na pagina futura
+    uint8_t mask2_pagina_sem_bola_futura= pag2_futura & ~b->face;
     
     if(colisao(b, ssd)){ // Verifica se a bolinha colidiu com os pinos
-        
         move_bola_x(b, ssd, binary_choice());   
     }else{ 
         // Desloca circularmente os bits  referentes a construção da bola de acordo com a velocidade
         if(b->face>>(8-b->v) > 0){// Verifica se a bolinha mudou de página
-            ssd[b->posicao[0] + (b->posicao[2]/8) * ssd1306_width] = b->face<<b->v;
-            ssd[b->posicao[1] + (b->posicao[2]/8) * ssd1306_width] = b->face<<b->v;
+            ssd[bits1_pagina_atual] =  mask1_pagina_sem_bola_atual | b->face<<b->v;
+            ssd[bits2_pagina_atual] =  mask2_pagina_sem_bola_atual | b->face<<b->v;
             b->face = b->face >> (8-b->v);
             posicao=b->posicao[2]; // guarda a posição da ultima página 
             b->posicao[2]+=8;
-            ssd[b->posicao[0] + (b->posicao[2]/8) * ssd1306_width] = b->face;
-            ssd[b->posicao[1] + (b->posicao[2]/8) * ssd1306_width] = b->face;
-
+            ssd[bits1_pagina_futura] =  mask1_pagina_sem_bola_futura | b->face;
+            ssd[bits2_pagina_futura] =  mask2_pagina_sem_bola_futura | b->face;
+               
         }else{
             if(posicao!=0){ // Verifica se o pixel da bolinha já foi apagado na pagina anterior
-                ssd[b->posicao[0] + (posicao/8) * ssd1306_width] = 0x00;
-                ssd[b->posicao[1] + (posicao/8) * ssd1306_width] = 0x00;
+                uint8_t mask0 =ssd[b->posicao[0] + (posicao/8) * ssd1306_width];
+                uint8_t mask1 =ssd[b->posicao[1] + (posicao/8) * ssd1306_width];
+                ssd[b->posicao[0] + (posicao/8) * ssd1306_width] = mask0 & ~ (b->face<<(8-b->v)) |  mask0 & (b->face<<(8-b->v)); // apaga os pixels da bola na pagina anterior sem apagar os pinos
+                ssd[b->posicao[1] + (posicao/8) * ssd1306_width] = mask1 & ~ (b->face<<(8-b->v)) |  mask1 & (b->face<<(8-b->v));
                 posicao=0;
+                
+                
             }
             if(b->face==0x01){// ajusta a face da bolinha para continuar com 2 casas
                 b->face=b->face<<1;
@@ -105,8 +122,8 @@ void move_bola_y(bola *b, uint8_t *ssd, struct render_area *area)
                 b->face=b->face << b->v; //Deslocamento da bolinha com base na velocidade
             }
         
-            ssd[b->posicao[0] + (b->posicao[2]/8) * ssd1306_width] = b->face;
-            ssd[b->posicao[1] + (b->posicao[2]/8) * ssd1306_width] = b->face;
+            ssd[bits1_pagina_atual] = mask1_pagina_sem_bola_atual | b->face;
+            ssd[bits2_pagina_atual] = mask2_pagina_sem_bola_atual | b->face;
         }
     }
 
@@ -236,7 +253,8 @@ int main()
 
     while (true) {
         
-        move_bola_y(&b1, ssd, &frame_area);  
-        sleep_ms(1000);
+        move_bola_y(&b1, ssd, &frame_area);
+           
+        
     }
 }
