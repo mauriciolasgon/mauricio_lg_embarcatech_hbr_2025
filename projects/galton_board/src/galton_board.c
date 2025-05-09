@@ -135,7 +135,7 @@ int main()
     draw_pins(ssd);
 
     render_on_display(ssd, &frame_area);
-    const int num_bolas=500;
+    const int num_bolas=1000;
     int bola_atual=0;
     bola bolas[num_bolas];
     inicializar_bolas(bolas,posicao_inicial,num_bolas);
