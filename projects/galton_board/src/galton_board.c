@@ -32,7 +32,7 @@ typedef struct {
     int coluna_final;
     int coluna_somada;
     int *bit_alterado;
-    uint8_t bolas;
+    int bolas;
 }canaleta;
 
 int total_canaletas=0;
@@ -160,11 +160,11 @@ int main()
             continue;   
         }
         
-        if (funil(&bolas[i], ssd, posicao_inicial)) {
+        if (funil(&bolas[i], ssd, posicao_inicial)) { // Verifica gargalo na posição inicial
             i = primeira_bola;
             bola_atual=primeira_bola;
         }
-        
+        // Movimenta ou registra a bola 
         atualizar_bolinha(&bolas[i], ssd, &frame_area, &primeira_bola);
    
         bola_atual++;
