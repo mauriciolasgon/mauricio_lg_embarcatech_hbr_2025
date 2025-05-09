@@ -8,16 +8,9 @@
 #include "hardware/i2c.h"
 #include "hardware/adc.h"
 
-
-
-
-
 const uint I2C_SDA = 14;
 const uint I2C_SCL = 15;
 
-#define LED_PIN 12 
-#define LARGURA_SSD ssd1306_width
-#define ALTURA_SSD ssd1306_height
 #define BOTAO_A 5
 
 
@@ -112,8 +105,6 @@ int main()
     // Processo de inicialização completo do OLED SSD1306
     ssd1306_init();
 
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
 
     gpio_init(BOTAO_A);
     gpio_set_dir(BOTAO_A, GPIO_IN);
