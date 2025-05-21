@@ -2,15 +2,16 @@
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
 #include "hardware/dma.h"
+#include <string.h>
 
 // Pino e canal do microfone no ADC.
 #define MIC_CHANNEL 2
 #define MIC_PIN (26 + MIC_CHANNEL)
 
 // Parâmetros e macros do ADC.
-#define ADC_CLOCK_DIV 96.f
-#define ADC_SAMPLE_RATE  48.000.000f / ADC_CLOCK_DIV
-#define SAMPLES 200 // Número de amostras que serão feitas do ADC.
+#define ADC_CLOCK_DIV 2000
+#define ADC_SAMPLE_RATE  (48000000 / ADC_CLOCK_DIV)
+#define SAMPLES ((int)(ADC_SAMPLE_RATE * 2))
 #define ADC_ADJUST(x) (x * 3.3f / (1 << 12u) - 1.65f) // Ajuste do valor do ADC para Volts.
 #define ADC_MAX 3.3f
 #define ADC_STEP (3.3f/5.f) // Intervalos de volume do microfone.
@@ -24,25 +25,26 @@
 #define BUTTON_A 5
 #define BUTTON_B 6
 
+#define RECORD_TIME 10
+#define TOTAL_SAMPLES (RECORD_TIME * ADC_SAMPLE_RATE) // Total de amostras a serem gravadas
 // Canal e configurações do DMA
 uint dma_channel;
 dma_channel_config dma_cfg;
 
-// Buffer de amostras do ADC.
-uint16_t adc_buffer[SAMPLES];
 
-// tempo de gravação(ms)
-int record_time=10000;
-bool record=false;
-bool buffer_pronto=false;
+
+uint16_t buffer[TOTAL_SAMPLES]; // Buffer A
+
+volatile int posicao = 0; // Posição atual no buffer
 
 enum Flags{
     FLAG_BUFFER = 1 << 0,
     FLAG_RECORD = 1 << 1,
-    FLAG_DMA = 1 << 2
+    FLAG_DMA = 1 << 2,
+    FLAG_TRATAMENTO = 1 << 3
 };
 
-uint8_t status = 0;
+volatile uint8_t status = 0;
 
 void init_record(); //captura os dados do adc e 
 void init_adc();
@@ -58,7 +60,6 @@ void dma_handler();
 // fazer a exibicao da onda
 // iniciar construcao pwm
 
-
 int main()
 {
     stdio_init_all();
@@ -67,24 +68,33 @@ int main()
     init_buttons();
     init_adc();
     init_dma();
+    volatile int posicao_atual = 0;
 
     while (true) {
-        if((status & FLAG_RECORD) && !(status & FLAG_DMA)){
+        if(status & FLAG_RECORD){
+            
+            posicao_atual = 0;
             init_record();
         }
         // enquanto grava processa os dados
         if(status & FLAG_BUFFER){
+            gpio_put(LED_GREEN, true);
+            // Aqui a escolha é ao contrario, se o buffer A for escolhido, o B é o que está livre para ser processado.
+            
             status &= ~FLAG_BUFFER;
+
+            
             //processa os dados com 200 samples
         }
-        
+
+           
     }
 }
 
 void init_adc(){
     //Configura o ADC
-    adc_gpio_init(MIC_PIN);
     adc_init();
+    adc_gpio_init(MIC_PIN);
     adc_select_input(MIC_CHANNEL);
 
 
@@ -137,12 +147,13 @@ void init_dma(){
 }
 
 void init_record() {
+    
     adc_fifo_drain(); // Limpa o FIFO do ADC.
     adc_run(false); // Desliga o ADC (se estiver ligado) para configurar o DMA.
 
     status |= FLAG_DMA;
     dma_channel_configure(dma_channel, &dma_cfg,
-        adc_buffer, // Escreve no buffer.
+        buffer, // Escreve no buffer.
         &(adc_hw->fifo), // Lê do ADC.
         SAMPLES, // Faz "SAMPLES" amostras.
         true // Liga o DMA.
@@ -150,27 +161,31 @@ void init_record() {
 
     // Liga o ADC e espera acabar a leitura.
     adc_run(true);
+    
 
 }
 
 void gpio_callback(uint gpio, uint32_t events) {
-    // Inicia o timer por 5 segundos
+
     if(!(status & FLAG_RECORD)){
         gpio_put(LED_RED,true);
-        add_alarm_in_ms(record_time, callback_timer, NULL, false);
+        gpio_put(LED_BLUE, false); // Apaga o LED azul
+        add_alarm_in_ms(RECORD_TIME*1000, callback_timer, NULL, false);
         status |= FLAG_RECORD;
+        
+        
     }
+    
 }
 
 int64_t callback_timer(alarm_id_t id, void *user_data) {
-    // Código a ser executado após 5 segundos
-    // Isso atua como a "interrupção do timer"
+    
     status &= ~FLAG_RECORD;
     status &= ~FLAG_DMA; 
     gpio_put(LED_RED,false);
     adc_run(false);
     dma_channel_abort(dma_channel);
-
+    gpio_put(LED_BLUE, true); // Acende o LED azul
     //verificar se há dados para processar
 
     printf("Tempo esgotado!\n");
@@ -178,12 +193,19 @@ int64_t callback_timer(alarm_id_t id, void *user_data) {
 }
 
 void dma_handler() {
+    
     // Verifica se a interrupção veio do canal específico
     if (dma_hw->ints0 & (1u << dma_channel)) {
-        dma_hw->ints0 = 1u << dma_channel; // limpa a flag de interrupção
-
+        dma_hw->ints0 = 1u << dma_channel; // limpa a flag de interrupção    
         // Aqui entra sua lógica: processar, copiar, iniciar nova transferência...
         status |= FLAG_BUFFER;
+        dma_channel_set_write_addr(dma_channel, buffer+posicao, true);
+        posicao += SAMPLES;
+        if(posicao >= TOTAL_SAMPLES){
+            posicao = 0;
+        }
+
+
     }
 }
 
