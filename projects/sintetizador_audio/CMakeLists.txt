@@ -48,7 +48,8 @@ pico_enable_stdio_usb(sintetizador_audio 0)
 target_link_libraries(sintetizador_audio
         pico_stdlib
         hardware_adc
-        hardware_dma)
+        hardware_dma
+        hardware_pwm)
 
 # Add the standard include files to the build
 target_include_directories(sintetizador_audio PRIVATE
