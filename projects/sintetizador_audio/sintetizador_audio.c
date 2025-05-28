@@ -4,6 +4,8 @@
 #include "hardware/dma.h"
 #include <string.h>
 #include "hardware/pwm.h"
+#include "include/ssd1306.h"
+
 
 // Pino e canal do microfone no ADC.
 #define MIC_CHANNEL 2
@@ -19,7 +21,7 @@
 
 //BUZZERS
 #define BUZZER_A 21 // Pino para o buzzer A
-#define PWM_WRAP 4095
+#define PWM_WRAP 255
 
 // LED RGB
 #define LED_GREEN 11
@@ -30,7 +32,9 @@
 #define BUTTON_A 5
 #define BUTTON_B 6
 
-#define RECORD_TIME 5 // Tempo de gravação em segundos
+
+
+#define RECORD_TIME 3 // Tempo de gravação em segundos
 #define TOTAL_SAMPLES (RECORD_TIME * ADC_SAMPLE_RATE) // Total de amostras a serem gravadas
 // Canal e configurações do DMA
 uint dma_channel;
@@ -52,6 +56,12 @@ enum Flags{
 
 volatile uint8_t status = 0;
 
+static struct repeating_timer play_timer;
+
+const uint I2C_SDA = 14;
+const uint I2C_SCL = 15;
+int blocos_prontos = 0;
+
 void init_record(); //captura os dados do adc e 
 void init_adc();
 void init_dma();
@@ -61,11 +71,13 @@ void gpio_callback(uint gpio, uint32_t events);
 int64_t callback_timer(alarm_id_t id, void *user_data);
 void dma_handler(); 
 void init_pwm_buzzers();
+bool play_callback(struct repeating_timer *t);
+
 
 // usar pwm buzzer
 // fazer a exibicao da onda
 // iniciar construcao pwm
-    int i = 0;
+
 int main()
 {
     stdio_init_all();
@@ -75,36 +87,57 @@ int main()
     init_adc();
     init_dma();
     init_pwm_buzzers();
+        // Inicialização do i2c
+    i2c_init(i2c1, ssd1306_i2c_clock * 1000);
+    gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA);
+    gpio_pull_up(I2C_SCL);
 
-    volatile int posicao_atual = 0;
+    // Processo de inicialização completo do OLED SSD1306
+    ssd1306_init();
+        struct render_area frame_area = {
+        start_column : 0,
+        end_column : ssd1306_width - 1,
+        start_page : 0,
+        end_page : ssd1306_n_pages - 1
+    };
+
+    calculate_render_area_buffer_length(&frame_area);
+    uint8_t ssd[ssd1306_buffer_length];
+    memset(ssd, 0, ssd1306_buffer_length);
+    render_on_display(ssd, &frame_area); // Limpa o display
+
+
 
     while (true) {
-        if(status & FLAG_RECORD){
-
-            posicao_atual = 0;
+        if((status & FLAG_RECORD) && !(status & FLAG_DMA)) {
             init_record();
+            
         } 
         // enquanto grava processa os dados
         if(status & FLAG_BUFFER){
-
-            status &= ~FLAG_BUFFER;
-
-         
+            
+            /* for(int i = bloco*SAMPLES; i < bloco*SAMPLES + SAMPLES; i++) {
+                printf("%d ", buffer[i]);
+            }
+            printf("\n ");
+            */
+            
+            
+            status &= ~FLAG_BUFFER; 
         }
 
         if(status & FLAG_BUZZER){
+
             gpio_put(LED_BLUE, true); // Acende o LED azul
             // Aciona o buzzer
-            int delay_us = 1000000 / ADC_SAMPLE_RATE;
-            for(int i = 0; i<TOTAL_SAMPLES;i++){
-                // Converte o valor do ADC para um nível de PWM
-                pwm_set_gpio_level(BUZZER_A, buffer[i]);
-                sleep_us(delay_us); // Aguarda 1ms para simular a frequência do buzzer
-               
-            }
-            pwm_set_gpio_level(BUZZER_A, 0); // Desliga o PWM após a reprodução
+            int delay_us = (int)(1e6 / ADC_SAMPLE_RATE);
+
+
+            add_repeating_timer_us(delay_us, play_callback, NULL, &play_timer);
             status &= ~FLAG_BUZZER;
-            gpio_put(LED_BLUE, false); // Acende o LED azul
+
         }
 
            
@@ -152,18 +185,19 @@ void init_rgb(){
 }
 
 void init_dma(){
-    // Tomando posse de canal do DMA.
+    // Tomando posse de um canal livre do DMA  
     dma_channel = dma_claim_unused_channel(true);
-    // Configurações do DMA.
+    // Pega a configuração padrão e ajusta apenas o essencial  
     dma_cfg = dma_channel_get_default_config(dma_channel);
-    channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_16); // Tamanho da transferência é 16-bits (usamos uint16_t para armazenar valores do ADC)
-    channel_config_set_read_increment(&dma_cfg, false); // Desabilita incremento do ponteiro de leitura (lemos de um único registrador)
-    channel_config_set_write_increment(&dma_cfg, true); // Habilita incremento do ponteiro de escrita (escrevemos em um array/buffer)
-    channel_config_set_dreq(&dma_cfg, DREQ_ADC); // Usamos a requisição de dados do ADC
+    channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_16);   // 16 bits por amostra  
+    channel_config_set_read_increment(&dma_cfg, false);             // não incrementa na leitura (ADC FIFO)  
+    channel_config_set_write_increment(&dma_cfg, true);             // incrementa o ponteiro de escrita (buffer)  
+    channel_config_set_dreq(&dma_cfg, DREQ_ADC);                    // sincroniza com o ADC  
+
+    // Habilita IRQ 
     dma_channel_set_irq0_enabled(dma_channel, true);
     irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
     irq_set_enabled(DMA_IRQ_0, true);
-
 }
 
 void init_record() {
@@ -172,17 +206,16 @@ void init_record() {
     adc_run(false); // Desliga o ADC (se estiver ligado) para configurar o DMA.
 
     status |= FLAG_DMA;
+    dma_hw->ints0 = 1u << dma_channel;       // limpa IRQ
     dma_channel_configure(dma_channel, &dma_cfg,
         buffer, // Escreve no buffer.
         &(adc_hw->fifo), // Lê do ADC.
         SAMPLES, // Faz "SAMPLES" amostras.
-        true // Liga o DMA.
+        false // Liga o DMA.
     );
-    irq_set_enabled(DMA_IRQ_0, true); 
-    // Liga o ADC e espera acabar a leitura.
-    adc_run(true);
-    
 
+    adc_run(true);
+    dma_channel_start(dma_channel); // Inicia o DMA.
 }
 
 void gpio_callback(uint gpio, uint32_t events) {
@@ -191,8 +224,7 @@ void gpio_callback(uint gpio, uint32_t events) {
         gpio_put(LED_RED,true);
         gpio_put(LED_BLUE, false); // Apaga o LED azul
         add_alarm_in_ms(RECORD_TIME*1000, callback_timer, NULL, false);
-        status |= FLAG_RECORD;
-        
+        status |= FLAG_RECORD;    
     }
     
 }
@@ -202,50 +234,58 @@ int64_t callback_timer(alarm_id_t id, void *user_data) {
     status &= ~FLAG_RECORD;
     status &= ~FLAG_DMA; 
     gpio_put(LED_RED,false);
-    adc_run(false);
+    irq_set_enabled(DMA_IRQ_0, false);  // desativa a interrupção
     dma_channel_abort(dma_channel);
     dma_hw->ints0 = 1u << dma_channel;  // limpa a flag de interrupção pendente
-    irq_set_enabled(DMA_IRQ_0, false);  // desativa a interrupção
+    adc_run(false);
+    posicao = 0; // Reseta a posição do buffer
+    blocos_prontos = 0; // Reseta o contador de blocos prontos
     
     
-    //verificar se há dados para processar
     status |= FLAG_BUZZER;
-    printf("Tempo esgotado!\n");
+    
     return 0; // 0 = não repetir
 }
 
-void dma_handler() {
-    if (!(status & FLAG_RECORD)){
-        dma_hw->ints0 = 1u << dma_channel; // limpa a flag de interrupção    
-        return;
-    } 
-    
-    // Verifica se a interrupção veio do canal específico
-    if (dma_hw->ints0 & (1u << dma_channel)) {
-        dma_hw->ints0 = 1u << dma_channel; // limpa a flag de interrupção    
-        // Aqui entra sua lógica: processar, copiar, iniciar nova transferência...
-        status |= FLAG_BUFFER;
-        dma_channel_set_write_addr(dma_channel, buffer+posicao, true);
-        posicao += SAMPLES;
-        if(posicao >= TOTAL_SAMPLES){
-            posicao = 0;
-        }
-
-
-    }
+void dma_handler() { // AJuste manual economizando ciclos
+    blocos_prontos++;
+    dma_hw->ints0 = 1u << dma_channel;       // limpa IRQ
+    posicao += SAMPLES;                // avanço no buffer
+    // ajusta registros: end de leitura, end de escrita, contagem, e re-ativa
+    dma_hw->ch[dma_channel].read_addr    = (uintptr_t)&adc_hw->fifo;
+    dma_hw->ch[dma_channel].write_addr   = (uintptr_t)(buffer + posicao);
+    dma_hw->ch[dma_channel].transfer_count = SAMPLES;
+    dma_hw->ch[dma_channel].ctrl_trig   |= DMA_CH0_CTRL_TRIG_EN_BITS;
+    status |= FLAG_BUFFER;
 }
 
+
 void init_pwm_buzzers(){
-    float clkdiv = 125000000.0f / (20000 * (PWM_WRAP + 1));
+    
     // Inicializa os pinos dos buzzers
     gpio_set_function(BUZZER_A, GPIO_FUNC_PWM);
     uint slice_num = pwm_gpio_to_slice_num(BUZZER_A);
     pwm_config config = pwm_get_default_config();
-    pwm_config_set_clkdiv(&config, clkdiv); // Ajusta divisor de clock
-    pwm_init(slice_num, &config, true);
     pwm_set_wrap(slice_num, PWM_WRAP); // Define o valor máximo do contador
+    pwm_config_set_clkdiv(&config, 1.0f); // Ajusta divisor de clock
+    pwm_init(slice_num, &config, true);
     pwm_set_gpio_level(BUZZER_A, 0); // Desliga o PWM inicialmente
 }
 
+bool play_callback(struct repeating_timer *t) {
+    static int play_idx = 0; // Índice de leitura do buffer
+    if (play_idx >= TOTAL_SAMPLES) {
+        pwm_set_gpio_level(BUZZER_A, 0);
+        play_idx=0;
+       
+        gpio_put(LED_BLUE, false); // Acende o LED azul
+        return false;  // para o timer
+    }
+    // converte 12→8 bits sem offset, direto em 0…255
+    
+    uint8_t duty = buffer[play_idx++] >> 4;
+    pwm_set_gpio_level(BUZZER_A, duty);
+    return true;  // mantem chamando
+}
 
 

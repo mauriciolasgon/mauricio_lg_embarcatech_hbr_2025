@@ -35,21 +35,24 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(sintetizador_audio sintetizador_audio.c )
+add_executable(sintetizador_audio 
+                sintetizador_audio.c 
+                ./include/ssd1306_i2c.c)
 
 pico_set_program_name(sintetizador_audio "sintetizador_audio")
 pico_set_program_version(sintetizador_audio "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(sintetizador_audio 0)
-pico_enable_stdio_usb(sintetizador_audio 0)
+pico_enable_stdio_usb(sintetizador_audio 1)
 
 # Add the standard library to the build
 target_link_libraries(sintetizador_audio
         pico_stdlib
         hardware_adc
         hardware_dma
-        hardware_pwm)
+        hardware_pwm
+        hardware_i2c)
 
 # Add the standard include files to the build
 target_include_directories(sintetizador_audio PRIVATE
