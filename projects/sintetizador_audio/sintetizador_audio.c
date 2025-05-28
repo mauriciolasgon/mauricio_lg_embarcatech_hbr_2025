@@ -74,9 +74,8 @@ void init_pwm_buzzers();
 bool play_callback(struct repeating_timer *t);
 
 
-// usar pwm buzzer
-// fazer a exibicao da onda
-// iniciar construcao pwm
+// Arrumar a reprodução do som
+// fazer a exibicao da onda no display
 
 int main()
 {
@@ -133,7 +132,6 @@ int main()
             gpio_put(LED_BLUE, true); // Acende o LED azul
             // Aciona o buzzer
             int delay_us = (int)(1e6 / ADC_SAMPLE_RATE);
-
 
             add_repeating_timer_us(delay_us, play_callback, NULL, &play_timer);
             status &= ~FLAG_BUZZER;
@@ -207,6 +205,7 @@ void init_record() {
 
     status |= FLAG_DMA;
     dma_hw->ints0 = 1u << dma_channel;       // limpa IRQ
+    irq_set_enabled(DMA_IRQ_0, true);
     dma_channel_configure(dma_channel, &dma_cfg,
         buffer, // Escreve no buffer.
         &(adc_hw->fifo), // Lê do ADC.
@@ -216,6 +215,7 @@ void init_record() {
 
     adc_run(true);
     dma_channel_start(dma_channel); // Inicia o DMA.
+
 }
 
 void gpio_callback(uint gpio, uint32_t events) {
@@ -235,7 +235,7 @@ int64_t callback_timer(alarm_id_t id, void *user_data) {
     status &= ~FLAG_DMA; 
     gpio_put(LED_RED,false);
     irq_set_enabled(DMA_IRQ_0, false);  // desativa a interrupção
-    dma_channel_abort(dma_channel);
+    dma_channel_abort(dma_channel); // aborta o DMA
     dma_hw->ints0 = 1u << dma_channel;  // limpa a flag de interrupção pendente
     adc_run(false);
     posicao = 0; // Reseta a posição do buffer
@@ -266,26 +266,34 @@ void init_pwm_buzzers(){
     gpio_set_function(BUZZER_A, GPIO_FUNC_PWM);
     uint slice_num = pwm_gpio_to_slice_num(BUZZER_A);
     pwm_config config = pwm_get_default_config();
-    pwm_set_wrap(slice_num, PWM_WRAP); // Define o valor máximo do contador
-    pwm_config_set_clkdiv(&config, 1.0f); // Ajusta divisor de clock
+    pwm_config_set_wrap(&config, PWM_WRAP); // Define o valor máximo do contador
+    float target_pwm_freq = 110000.0f; // 50 kHz
+    float div = 125000000.0f / ((PWM_WRAP + 1) * target_pwm_freq);
+    pwm_config_set_clkdiv(&config, div); // Ajusta divisor de clock
     pwm_init(slice_num, &config, true);
     pwm_set_gpio_level(BUZZER_A, 0); // Desliga o PWM inicialmente
 }
 
 bool play_callback(struct repeating_timer *t) {
-    static int play_idx = 0; // Índice de leitura do buffer
-    if (play_idx >= TOTAL_SAMPLES) {
-        pwm_set_gpio_level(BUZZER_A, 0);
-        play_idx=0;
-       
-        gpio_put(LED_BLUE, false); // Acende o LED azul
-        return false;  // para o timer
+    static int idx = 0;
+    if (idx >= TOTAL_SAMPLES) {
+        gpio_put(LED_BLUE, false); // Apaga o LED azul
+        pwm_set_gpio_level(BUZZER_A, 0);      // retoma silêncio
+        idx = 0;
+        memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+        return false;                          // para o timer
     }
-    // converte 12→8 bits sem offset, direto em 0…255
+    // leu 0…4095
+   
     
-    uint8_t duty = buffer[play_idx++] >> 4;
-    pwm_set_gpio_level(BUZZER_A, duty);
-    return true;  // mantem chamando
+    int16_t centered = (int16_t)buffer[idx++] - 2048;  
+    int32_t amplified = centered * 20;  
+    if (amplified >  2047) amplified =  2047;  
+    else if (amplified < -2048) amplified = -2048;  
+    uint8_t pwm_val = (uint8_t)((amplified + 2048) >> 4);  
+    pwm_set_gpio_level(BUZZER_A, pwm_val); // Ajusta o PWM do buzzer A
+    return true;                              // continua chamando a 24 kHz
 }
+
 
 
