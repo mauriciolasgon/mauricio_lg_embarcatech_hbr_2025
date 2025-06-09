@@ -5,6 +5,7 @@
 #include <string.h>
 #include "hardware/pwm.h"
 #include "include/ssd1306.h"
+#include "hardware/clocks.h"
 
 
 // Pino e canal do microfone no ADC.
@@ -74,7 +75,6 @@ void init_pwm_buzzers();
 bool play_callback(struct repeating_timer *t);
 
 
-// Arrumar a reprodução do som
 // fazer a exibicao da onda no display
 
 int main()
@@ -114,19 +114,7 @@ int main()
             init_record();
             
         } 
-        // enquanto grava processa os dados
-        if(status & FLAG_BUFFER){
-            
-            /* for(int i = bloco*SAMPLES; i < bloco*SAMPLES + SAMPLES; i++) {
-                printf("%d ", buffer[i]);
-            }
-            printf("\n ");
-            */
-            
-            
-            status &= ~FLAG_BUFFER; 
-        }
-
+       
         if(status & FLAG_BUZZER){
 
             gpio_put(LED_BLUE, true); // Acende o LED azul
@@ -267,30 +255,39 @@ void init_pwm_buzzers(){
     uint slice_num = pwm_gpio_to_slice_num(BUZZER_A);
     pwm_config config = pwm_get_default_config();
     pwm_config_set_wrap(&config, PWM_WRAP); // Define o valor máximo do contador
-    float target_pwm_freq = 110000.0f; // 50 kHz
-    float div = 125000000.0f / ((PWM_WRAP + 1) * target_pwm_freq);
-    pwm_config_set_clkdiv(&config, div); // Ajusta divisor de clock
+   
+    float clkdiv = (float)clock_get_hz(clk_sys) / (ADC_SAMPLE_RATE * (PWM_WRAP + 1));
+   
+    pwm_config_set_clkdiv(&config, clkdiv); // Ajusta divisor de clock
     pwm_init(slice_num, &config, true);
     pwm_set_gpio_level(BUZZER_A, 0); // Desliga o PWM inicialmente
 }
 
 bool play_callback(struct repeating_timer *t) {
+    static int16_t y_last = 0;
+    const float alpha = 0.3f;  // quanto menor, mais suavização
     static int idx = 0;
     if (idx >= TOTAL_SAMPLES) {
         gpio_put(LED_BLUE, false); // Apaga o LED azul
         pwm_set_gpio_level(BUZZER_A, 0);      // retoma silêncio
         idx = 0;
         memset(buffer, 0, sizeof(buffer)); // limpa o buffer
+        idx=0;
+        y_last=0;
+
         return false;                          // para o timer
     }
     // leu 0…4095
    
     
-    int16_t centered = (int16_t)buffer[idx++] - 2048;  
-    int32_t amplified = centered * 20;  
-    if (amplified >  2047) amplified =  2047;  
-    else if (amplified < -2048) amplified = -2048;  
-    uint8_t pwm_val = (uint8_t)((amplified + 2048) >> 4);  
+    int16_t centered = (int16_t)buffer[idx++] - 2048;
+    int32_t amplified = centered * 8;
+    if      (amplified >  2047) amplified =  2047;
+    else if (amplified < -2048) amplified = -2048;
+    // filtro IIR y[n] = α·x[n] + (1–α)·y[n–1]
+    int16_t y = (int16_t)(alpha * amplified + (1.0f - alpha) * y_last);
+    y_last = y;
+    uint16_t pwm_val = (uint16_t)((y + 2048)>>4);  // de 0 a 255 para wrap=4095
     pwm_set_gpio_level(BUZZER_A, pwm_val); // Ajusta o PWM do buzzer A
     return true;                              // continua chamando a 24 kHz
 }
