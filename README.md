@@ -26,4 +26,3 @@ Cada projeto e atividade tem sua própria pasta, contendo o código-fonte, docum
 
 -[Sintetizador de áudio](./projects/sintetizador_audio/)
 
--[Robo equilibrista](./projects/robo_equilibrista/)
