@@ -4,7 +4,7 @@
 #include "hardware/dma.h"
 #include <string.h>
 #include "hardware/pwm.h"
-#include "include/ssd1306.h"
+
 #include "hardware/clocks.h"
 
 
@@ -86,28 +86,7 @@ int main()
     init_adc();
     init_dma();
     init_pwm_buzzers();
-        // Inicialização do i2c
-    i2c_init(i2c1, ssd1306_i2c_clock * 1000);
-    gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
-    gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
-    gpio_pull_up(I2C_SDA);
-    gpio_pull_up(I2C_SCL);
-
-    // Processo de inicialização completo do OLED SSD1306
-    ssd1306_init();
-        struct render_area frame_area = {
-        start_column : 0,
-        end_column : ssd1306_width - 1,
-        start_page : 0,
-        end_page : ssd1306_n_pages - 1
-    };
-
-    calculate_render_area_buffer_length(&frame_area);
-    uint8_t ssd[ssd1306_buffer_length];
-    memset(ssd, 0, ssd1306_buffer_length);
-    render_on_display(ssd, &frame_area); // Limpa o display
-
-
+     
 
     while (true) {
         if((status & FLAG_RECORD) && !(status & FLAG_DMA)) {
